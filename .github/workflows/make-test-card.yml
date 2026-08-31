@@ -1,0 +1,78 @@
+name: Render Instagram test card
+
+# Renders ONE original 1080x1350 JPEG and commits it to instagram/.
+# This repository is PUBLIC and holds only static assets and pages.
+# It contains no tokens, no API keys and no private source.
+on:
+  workflow_dispatch:
+    inputs:
+      filename:
+        description: "output name under instagram/"
+        required: false
+        default: "test-card.jpg"
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+      - name: Render 1080x1350 JPEG
+        env:
+          OUT: ${{ inputs.filename }}
+        run: |
+          mkdir -p instagram
+          cat > render.js <<'EOF'
+          const { chromium } = require('playwright');
+          const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+          *{margin:0;padding:0;box-sizing:border-box}
+          body{width:1080px;height:1350px;background:#0B1A34;color:#F7F5F0;
+               font-family:Georgia,'Times New Roman',serif}
+          .stage{position:relative;width:1080px;height:1350px}
+          .frame{position:absolute;inset:26px;border:2px solid rgba(212,162,76,.42);border-radius:10px}
+          .inner{position:absolute;inset:26px;padding:70px;display:flex;flex-direction:column;
+                 justify-content:center;align-items:center;text-align:center}
+          .kick{font-size:22px;letter-spacing:6px;color:#D4A24C;font-weight:bold;margin-bottom:34px}
+          h1{font-size:64px;line-height:1.2;margin-bottom:26px}
+          .rule{width:130px;height:3px;background:#D4A24C;margin:26px 0}
+          p{font-size:30px;line-height:1.5;color:rgba(247,245,240,.82);max-width:760px}
+          .foot{margin-top:70px;font-size:21px;letter-spacing:3px;color:rgba(212,162,76,.92)}
+          </style></head><body><div class="stage"><div class="frame"></div><div class="inner">
+          <div class="kick">PAKISTANI DRAMA PAGE</div>
+          <h1>Pipeline Test</h1><div class="rule"></div>
+          <p>Original test content for the Instagram image publishing pipeline. No drama artwork, no photos, no logos.</p>
+          <div class="foot">FB.COM/PAKDRAMAP</div>
+          </div></div></body></html>`;
+          (async () => {
+            const b = await chromium.launch();
+            const p = await b.newPage({ viewport: { width: 1080, height: 1350 }, deviceScaleFactor: 1 });
+            await p.setContent(html, { waitUntil: 'load' });
+            await p.waitForTimeout(500);
+            await p.screenshot({ path: process.env.OUT_PATH, type: 'jpeg', quality: 92 });
+            await b.close();
+          })();
+          EOF
+          OUT_PATH="instagram/${OUT}" node render.js
+          rm -f render.js package.json package-lock.json
+          rm -rf node_modules
+          ls -la instagram/
+          file "instagram/${OUT}" || true
+      - name: Commit the card
+        env:
+          OUT: ${{ inputs.filename }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "instagram/${OUT}"
+          git commit -m "Render Instagram test card ${OUT}" || echo "nothing to commit"
+          git push
